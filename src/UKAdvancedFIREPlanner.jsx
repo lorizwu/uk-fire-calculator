@@ -231,34 +231,51 @@ function reverseEngineerSalary(p) {
 // Find min base salary that secures the bridge.
 // ============================================================
 function findTargetSalary(p) {
-  const bridgeYears = p.pensionAge - p.retireAge;
   const trial = (base) => {
     const cf = cashFlow(base, p.bonusPct, p.personalPct, p.employerPct);
     const annualISA = Math.max(0, cf.net - p.annualExpenses);
     const sim = simulate({ ...p, baseSalary: base, monthlyISA: annualISA / 12, isaScaling: 0 });
+    
     const retirePoint = sim.data.find(d => d.age === p.retireAge);
     const pensionPoint = sim.data.find(d => d.age === p.pensionAge);
-    const required = requiredISAforBridge(p.annualExpenses, sim.realReturnISA, bridgeYears);
+    
+    // Evaluate if the bridge is fully secure (ISA balance doesn't drop below 0 at 57)
+    const isaAt57 = pensionPoint?.isa ?? 0;
+    
+    // Calculate required ISA purely for information display
+    const bridgeYears = p.pensionAge - p.retireAge;
+    const requiredISA = requiredISAforBridge(p.annualExpenses, sim.realReturnISA, bridgeYears);
+
     return {
       isa: retirePoint?.isa ?? 0,
       pensionAt57: pensionPoint?.pension ?? 0,
-      required,
-      gap: required - (retirePoint?.isa ?? 0),
+      isaAt57,
+      requiredISA,
       derivedMonthlyISA: annualISA / 12,
       derivedAnnualISA: annualISA,
       cf,
     };
   };
-  let lo = 1000, hi = 2_000_000;
-  if (trial(hi).gap > 0) {
+
+  let minSalary = 20000;
+  let maxSalary = 1000000;
+
+  // Check if max limit is still unreachable
+  if (trial(maxSalary).isaAt57 < 0) {
     return { required: null, unreachable: true, currentTrial: trial(p.baseSalary) };
   }
-  for (let i = 0; i < 70; i++) {
-    const mid = (lo + hi) / 2;
-    if (trial(mid).gap > 0) lo = mid; else hi = mid;
-    if (hi - lo < 50) break;
+
+  // Binary Search loop
+  while (maxSalary - minSalary > 10) {
+    const midSalary = (minSalary + maxSalary) / 2;
+    if (trial(midSalary).isaAt57 >= 0) {
+      maxSalary = midSalary;
+    } else {
+      minSalary = midSalary;
+    }
   }
-  const required = Math.ceil(hi / 100) * 100;
+
+  const required = Math.ceil(maxSalary);
   return { required, unreachable: false, ...trial(required) };
 }
 
@@ -873,7 +890,7 @@ export default function UKAdvancedFIREPlanner() {
                       <Row label="Pension @ 57 (real)" value={fmtGBP(target.pensionAt57)} accent="purple" />
                       <div className="border-t border-zinc-800 my-1.5" />
                       <Row label="ISA @ Retire (projected)" value={fmtGBP(target.isa)} accent="emerald" />
-                      <Row label="ISA Required @ Retire" value={fmtGBP(target.required)} />
+                      <Row label="ISA Required @ Retire" value={fmtGBP(target.requiredISA)} />
                     </div>
                     <div className="mt-3 pt-3 border-t border-zinc-800 text-[10px] text-zinc-500 leading-relaxed">
                       <span className="text-zinc-400">Lifestyle model:</span> ISA = max(0, net − £{annualExpenses.toLocaleString()})/12.

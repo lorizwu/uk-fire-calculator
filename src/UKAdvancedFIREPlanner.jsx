@@ -6,7 +6,7 @@ import {
 import {
   Calendar, Wallet, Lock, AlertTriangle, CheckCircle, AlertCircle,
   PiggyBank, Activity, Crosshair, TrendingUp, Briefcase,
-  Zap, Shield, Receipt, Gift, Target, Info, Layers
+  Zap, Receipt, Gift, Info, Layers
 } from "lucide-react";
 
 // ============================================================
@@ -428,7 +428,7 @@ export default function UKAdvancedFIREPlanner() {
 
   const realReturnISApct = (sim.realReturnISA * 100).toFixed(2);
   const realReturnPensionPct = (sim.realReturnPension * 100).toFixed(2);
-  const savingsRate = sim.cashFlow.net > 0 ? ((activeMonthlyISA * 12) / sim.cashFlow.net) * 100 : 0;
+  const savingsRate = sim.cashFlow.net > 0 ? ((monthlyISA * 12) / sim.cashFlow.net) * 100 : 0;
 
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100 p-4 font-sans">
@@ -654,7 +654,7 @@ export default function UKAdvancedFIREPlanner() {
             </ResponsiveContainer>
           </div>
 
-          {/* BRIDGE BAR CHART + GOAL SEEK */}
+          {/* BRIDGE BAR CHART */}
           <div className="grid grid-cols-12 gap-4">
             {/* Bridge year-by-year visualization */}
             <div className={`col-span-7 border rounded-lg p-4 ${bridgeSecure
@@ -734,7 +734,7 @@ export default function UKAdvancedFIREPlanner() {
               )}
             </div>
 
-            {/* GOAL SEEK / REVERSE ENGINEER */}
+            {/* REVERSE ENGINEER */}
             <div className="col-span-5 bg-zinc-900/50 border border-zinc-800 rounded-lg p-4">
               <div className="flex items-center justify-between mb-3">
                 <h3 className="text-[11px] font-bold text-zinc-300 flex items-center gap-1.5">
@@ -771,7 +771,7 @@ export default function UKAdvancedFIREPlanner() {
                   </div>
                   <div className="mt-3 space-y-1.5 text-[11px] font-mono">
                     <Row label="Current Base Salary" value={fmtGBP(baseSalary)} />
-                    <Row label="Required Target Base" value={fmtGBP(reverse.required)} accent="amber" bold />
+                    <Row label="Required Base Salary" value={fmtGBP(reverse.required)} accent="amber" bold />
                     <Row label="Implied Total Gross" value={fmtGBP(reverse.required * (1 + bonusPct / 100))} accent="amber" />
                     <Row label="Delta vs Current"
                       value={(reverse.required >= baseSalary ? '+' : '−') + fmtGBP(Math.abs(reverse.required - baseSalary))}

@@ -226,60 +226,6 @@ function reverseEngineerSalary(p) {
 }
 
 // ============================================================
-// GOAL SEEK · TARGET SALARY MODE (lifestyle model)
-// ISA contribution derived from net surplus over annual expenses.
-// Find min base salary that secures the bridge.
-// ============================================================
-function findTargetSalary(p) {
-  const trial = (base) => {
-    const cf = cashFlow(base, p.bonusPct, p.personalPct, p.employerPct);
-    const annualISA = Math.max(0, cf.net - p.annualExpenses);
-    const sim = simulate({ ...p, baseSalary: base, monthlyISA: annualISA / 12, isaScaling: 0 });
-    
-    const retirePoint = sim.data.find(d => d.age === p.retireAge);
-    const pensionPoint = sim.data.find(d => d.age === p.pensionAge);
-    
-    // Evaluate if the bridge is fully secure (ISA balance doesn't drop below 0 at 57)
-    const isaAt57 = pensionPoint?.isa ?? 0;
-    
-    // Calculate required ISA purely for information display
-    const bridgeYears = p.pensionAge - p.retireAge;
-    const requiredISA = requiredISAforBridge(p.annualExpenses, sim.realReturnISA, bridgeYears);
-
-    return {
-      isa: retirePoint?.isa ?? 0,
-      pensionAt57: pensionPoint?.pension ?? 0,
-      isaAt57,
-      requiredISA,
-      derivedMonthlyISA: annualISA / 12,
-      derivedAnnualISA: annualISA,
-      cf,
-    };
-  };
-
-  let minSalary = 20000;
-  let maxSalary = 1000000;
-
-  // Check if max limit is still unreachable
-  if (trial(maxSalary).isaAt57 < 0) {
-    return { required: null, unreachable: true, currentTrial: trial(p.baseSalary) };
-  }
-
-  // Binary Search loop
-  while (maxSalary - minSalary > 10) {
-    const midSalary = (minSalary + maxSalary) / 2;
-    if (trial(midSalary).isaAt57 >= 0) {
-      maxSalary = midSalary;
-    } else {
-      minSalary = midSalary;
-    }
-  }
-
-  const required = Math.ceil(maxSalary);
-  return { required, unreachable: false, ...trial(required) };
-}
-
-// ============================================================
 // FORMATTERS
 // ============================================================
 const fmtGBP = (n) => '£' + Math.round(n).toLocaleString('en-GB');
@@ -427,7 +373,6 @@ export default function UKAdvancedFIREPlanner() {
 
   // Mode toggles
   const [useCarryForward, setUseCarryForward] = useState(false);
-  const [targetSalaryMode, setTargetSalaryMode] = useState(false);
 
   useEffect(() => {
     if (retireAge <= currentAge) setRetireAge(Math.min(currentAge + 1, pensionAge));
@@ -441,27 +386,8 @@ export default function UKAdvancedFIREPlanner() {
     nominalReturnISA, nominalReturnPension, inflation, annualExpenses,
   };
 
-  // Goal Seek (Target Salary Mode result — always computed for display)
-  const target = useMemo(() => findTargetSalary(userParams), [
-    currentAge, retireAge, baseSalary, bonusPct, personalPct, employerPct,
-    monthlyISA, currentISA, currentPension,
-    nominalReturnISA, nominalReturnPension, inflation, annualExpenses,
-  ]);
-
-  // Active params used by main simulation
-  const activeBaseSalary = (targetSalaryMode && target.required) ? target.required : baseSalary;
-  const activeMonthlyISA = (targetSalaryMode && target.required)
-    ? target.derivedMonthlyISA
-    : monthlyISA;
-
-  const activeParams = {
-    ...userParams,
-    baseSalary: activeBaseSalary,
-    monthlyISA: activeMonthlyISA,
-  };
-
-  const sim = useMemo(() => simulate(activeParams), [
-    activeBaseSalary, activeMonthlyISA, currentAge, retireAge, bonusPct,
+  const sim = useMemo(() => simulate(userParams), [
+    baseSalary, monthlyISA, currentAge, retireAge, bonusPct,
     personalPct, employerPct, currentISA, currentPension,
     nominalReturnISA, nominalReturnPension, inflation, annualExpenses,
   ]);
@@ -531,22 +457,7 @@ export default function UKAdvancedFIREPlanner() {
         {/* =============== LEFT INPUTS =============== */}
         <div className="col-span-3 space-y-3">
 
-          {/* TARGET MODE TOGGLE BANNER */}
-          <div className={`border rounded-lg p-3 ${targetSalaryMode ? 'bg-amber-950/30 border-amber-700/60' : 'bg-zinc-900/50 border-zinc-800'}`}>
-            <Toggle
-              label="TARGET SALARY MODE"
-              hint="Lock retire age + expenses. Goal-seek min salary."
-              checked={targetSalaryMode}
-              onChange={setTargetSalaryMode}
-              color="amber"
-            />
-            {targetSalaryMode && (
-              <div className="mt-2 pt-2 border-t border-amber-800/50 text-[10px] text-amber-200/80 leading-snug flex items-start gap-1.5">
-                <Target size={11} className="text-amber-400 mt-0.5 shrink-0" />
-                <span>Salary & ISA contribution are <span className="font-bold">derived</span>. ISA = (net income − annual expenses) / 12.</span>
-              </div>
-            )}
-          </div>
+
 
           <div className="bg-zinc-900/50 border border-zinc-800 rounded-lg p-3 space-y-2.5">
             <h3 className="text-[11px] font-bold text-zinc-300 flex items-center gap-1.5">
@@ -566,27 +477,8 @@ export default function UKAdvancedFIREPlanner() {
               <Briefcase size={12} className="text-emerald-400" /> INCOME
             </h3>
 
-            {targetSalaryMode ? (
-              target.unreachable ? (
-                <div className="bg-red-950/30 border border-red-800/50 rounded p-2 text-[11px] text-red-400 flex items-start gap-1.5">
-                  <AlertTriangle size={12} className="mt-0.5 shrink-0" />
-                  <span>Target unreachable. Reduce expenses or extend retire age.</span>
-                </div>
-              ) : (
-                <div className="bg-amber-950/30 border border-amber-800/50 rounded p-2">
-                  <div className="text-[10px] text-amber-400 font-bold mb-0.5 flex items-center gap-1">
-                    <Target size={10} /> DERIVED · MIN BASE SALARY
-                  </div>
-                  <div className="text-xl font-bold font-mono text-amber-400">{fmtGBP(activeBaseSalary)}</div>
-                  <div className="text-[10px] text-zinc-500 mt-0.5">
-                    Implied total gross: {fmtGBP(activeBaseSalary * (1 + bonusPct / 100))}
-                  </div>
-                </div>
-              )
-            ) : (
-              <Slider label="Base Salary" value={baseSalary} setValue={setBaseSalary}
-                min={20000} max={300000} step={500} unit="£" />
-            )}
+            <Slider label="Base Salary" value={baseSalary} setValue={setBaseSalary}
+              min={20000} max={300000} step={500} unit="£" />
 
             <Slider label="Bonus (% of base)" value={bonusPct} setValue={setBonusPct}
               min={0} max={100} step={1} unit="%" />
@@ -666,19 +558,11 @@ export default function UKAdvancedFIREPlanner() {
               </div>
             </div>
 
-            <div className={targetSalaryMode ? 'opacity-60' : ''}>
-              <Slider label={targetSalaryMode ? "Monthly ISA (derived)" : "Monthly ISA Contribution"}
-                value={Math.round(activeMonthlyISA)}
-                setValue={setMonthlyISA}
-                min={0} max={3333} step={50} unit="£"
-                disabled={targetSalaryMode}
-              />
-              {targetSalaryMode && (
-                <div className="text-[10px] text-amber-400/80 mt-0.5">
-                  Auto-derived from net surplus over expenses.
-                </div>
-              )}
-            </div>
+            <Slider label="Monthly ISA Contribution"
+              value={monthlyISA}
+              setValue={setMonthlyISA}
+              min={0} max={3333} step={50} unit="£"
+            />
             <NumberInput label="Current ISA Balance" value={currentISA} setValue={setCurrentISA} />
             <NumberInput label="Current Pension Balance" value={currentPension} setValue={setCurrentPension} />
           </div>
@@ -706,7 +590,7 @@ export default function UKAdvancedFIREPlanner() {
             <KPI label="TOTAL GROSS"
               value={fmtGBPshort(sim.cashFlow.grossTotal)}
               sub={`Base ${fmtGBPshort(sim.cashFlow.baseSalary)} + Bonus ${fmtGBPshort(sim.cashFlow.bonus)}`}
-              icon={Briefcase} accent={targetSalaryMode ? 'amber' : null} />
+              icon={Briefcase} />
             <KPI label="INCOME TAX"
               value={fmtGBPshort(sim.cashFlow.tax)}
               sub={`PA ${fmtGBPshort(sim.cashFlow.effectivePA)} ${sim.cashFlow.paTapered ? '· tapered' : ''}`}
@@ -854,92 +738,53 @@ export default function UKAdvancedFIREPlanner() {
             <div className="col-span-5 bg-zinc-900/50 border border-zinc-800 rounded-lg p-4">
               <div className="flex items-center justify-between mb-3">
                 <h3 className="text-[11px] font-bold text-zinc-300 flex items-center gap-1.5">
-                  <Crosshair size={12} className="text-amber-400" />
-                  {targetSalaryMode ? 'GOAL SEEK · ACTIVE' : 'REVERSE ENGINEER'}
+                  <Crosshair size={12} className="text-emerald-400" />
+                  REVERSE ENGINEER
                 </h3>
                 <span className="text-[10px] font-mono text-zinc-500">
-                  {targetSalaryMode ? 'lifestyle model' : 'surplus model'}
+                  surplus model
                 </span>
               </div>
 
-              {targetSalaryMode ? (
-                target.unreachable ? (
-                  <div>
-                    <div className="text-2xl font-bold text-red-400 mb-1 flex items-center gap-2">
-                      <AlertTriangle size={20} /> UNREACHABLE
-                    </div>
-                    <div className="text-[11px] text-zinc-400">
-                      Cannot solve at any salary ≤ £2M. Lower expenses or push retire age later.
-                    </div>
+              {reverse.unreachable ? (
+                <div>
+                  <div className="text-2xl font-bold text-red-400 mb-1 flex items-center gap-2">
+                    <AlertTriangle size={20} /> UNREACHABLE
                   </div>
-                ) : (
-                  <>
-                    <div className="text-[11px] text-zinc-400 mb-2">
-                      Min base salary that lets you save (net − expenses) into ISA and clear the bridge.
-                    </div>
-                    <div className="text-3xl font-bold font-mono text-amber-400">
-                      {fmtGBP(target.required)}
-                    </div>
-                    <div className="text-[11px] text-amber-400/80 mt-1">
-                      → Net £{Math.round(target.cf.net).toLocaleString()} → ISA £{Math.round(target.derivedAnnualISA).toLocaleString()}/yr
-                    </div>
-                    <div className="mt-3 space-y-1.5 text-[11px] font-mono">
-                      <Row label="Required Base Salary" value={fmtGBP(target.required)} accent="amber" bold />
-                      <Row label="Total Gross (incl. bonus)" value={fmtGBP(target.required * (1 + bonusPct / 100))} accent="amber" />
-                      <Row label="Derived monthly ISA" value={fmtGBP(target.derivedMonthlyISA)} accent="cyan" />
-                      <Row label="Pension @ 57 (real)" value={fmtGBP(target.pensionAt57)} accent="purple" />
-                      <div className="border-t border-zinc-800 my-1.5" />
-                      <Row label="ISA @ Retire (projected)" value={fmtGBP(target.isa)} accent="emerald" />
-                      <Row label="ISA Required @ Retire" value={fmtGBP(target.requiredISA)} />
-                    </div>
-                    <div className="mt-3 pt-3 border-t border-zinc-800 text-[10px] text-zinc-500 leading-relaxed">
-                      <span className="text-zinc-400">Lifestyle model:</span> ISA = max(0, net − £{annualExpenses.toLocaleString()})/12.
-                      Pension % and bonus % held constant.
-                    </div>
-                  </>
-                )
+                  <div className="text-[11px] text-zinc-400">
+                    Bridge gap cannot close even at £1.5M base salary. Lower expenses, retire later, or boost ISA contribution.
+                  </div>
+                </div>
               ) : (
-                reverse.unreachable ? (
-                  <div>
-                    <div className="text-2xl font-bold text-red-400 mb-1 flex items-center gap-2">
-                      <AlertTriangle size={20} /> UNREACHABLE
-                    </div>
-                    <div className="text-[11px] text-zinc-400">
-                      Bridge gap cannot close even at £1.5M base salary. Lower expenses, retire later, or boost ISA contribution.
-                    </div>
+                <>
+                  <div className="text-[11px] text-zinc-400 mb-2">
+                    Min base salary above current that closes the gap, with surplus net auto-flowing to ISA.
                   </div>
-                ) : (
-                  <>
-                    <div className="text-[11px] text-zinc-400 mb-2">
-                      Min base salary above current that closes the gap, with surplus net auto-flowing to ISA.
-                    </div>
-                    <div className={`text-3xl font-bold font-mono ${reverse.alreadySecure ? 'text-emerald-400' : 'text-amber-400'}`}>
-                      {fmtGBP(reverse.required)}
-                    </div>
-                    <div className={`text-[11px] mt-1 ${reverse.alreadySecure ? 'text-emerald-400' : 'text-amber-400'}`}>
-                      {reverse.alreadySecure
-                        ? `${fmtGBP(baseSalary - reverse.required)} above min — secure.`
-                        : `Need +${fmtGBP(reverse.required - baseSalary)} above current base.`
-                      }
-                    </div>
-                    <div className="mt-3 space-y-1.5 text-[11px] font-mono">
-                      <Row label="Current Base Salary" value={fmtGBP(baseSalary)} />
-                      <Row label="Required Target Base" value={fmtGBP(reverse.required)} accent="amber" bold />
-                      <Row label="Implied Total Gross" value={fmtGBP(reverse.required * (1 + bonusPct / 100))} accent="amber" />
-                      <Row label="Delta vs Current"
-                        value={(reverse.required >= baseSalary ? '+' : '−') + fmtGBP(Math.abs(reverse.required - baseSalary))}
-                        accent={reverse.required >= baseSalary ? 'red' : 'emerald'} />
-                      <div className="border-t border-zinc-800 my-1.5" />
-                      <Row label="Bridge Gap @ Current"
-                        value={fmtGBP(Math.max(0, reverse.currentTrial.gap))}
-                        accent={reverse.currentTrial.gap > 0 ? 'red' : 'emerald'} />
-                    </div>
-                    <div className="mt-3 pt-3 border-t border-zinc-800 text-[10px] text-zinc-500 leading-relaxed">
-                      <span className="text-zinc-400">Surplus model:</span> net surplus over current take-home flows into ISA.
-                      Toggle <span className="text-amber-400 font-bold">Target Salary Mode</span> for full goal-seek.
-                    </div>
-                  </>
-                )
+                  <div className={`text-3xl font-bold font-mono ${reverse.alreadySecure ? 'text-emerald-400' : 'text-amber-400'}`}>
+                    {fmtGBP(reverse.required)}
+                  </div>
+                  <div className={`text-[11px] mt-1 ${reverse.alreadySecure ? 'text-emerald-400' : 'text-amber-400'}`}>
+                    {reverse.alreadySecure
+                      ? `${fmtGBP(baseSalary - reverse.required)} above min — secure.`
+                      : `Need +${fmtGBP(reverse.required - baseSalary)} above current base.`
+                    }
+                  </div>
+                  <div className="mt-3 space-y-1.5 text-[11px] font-mono">
+                    <Row label="Current Base Salary" value={fmtGBP(baseSalary)} />
+                    <Row label="Required Target Base" value={fmtGBP(reverse.required)} accent="amber" bold />
+                    <Row label="Implied Total Gross" value={fmtGBP(reverse.required * (1 + bonusPct / 100))} accent="amber" />
+                    <Row label="Delta vs Current"
+                      value={(reverse.required >= baseSalary ? '+' : '−') + fmtGBP(Math.abs(reverse.required - baseSalary))}
+                      accent={reverse.required >= baseSalary ? 'red' : 'emerald'} />
+                    <div className="border-t border-zinc-800 my-1.5" />
+                    <Row label="Bridge Gap @ Current"
+                      value={fmtGBP(Math.max(0, reverse.currentTrial.gap))}
+                      accent={reverse.currentTrial.gap > 0 ? 'red' : 'emerald'} />
+                  </div>
+                  <div className="mt-3 pt-3 border-t border-zinc-800 text-[10px] text-zinc-500 leading-relaxed">
+                    <span className="text-zinc-400">Surplus model:</span> net surplus over current take-home flows into ISA.
+                  </div>
+                </>
               )}
             </div>
           </div>
